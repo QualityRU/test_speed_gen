@@ -1,0 +1,145 @@
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Image Processing Client</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+    }
+
+    button {
+      margin: 5px 0;
+      padding: 10px 15px;
+      font-size: 16px;
+    }
+
+    #progressContainer {
+      margin-top: 20px;
+    }
+
+    #progressBar {
+      width: 100%;
+      height: 24px;
+      background-color: #eee;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    #progressBarFill {
+      height: 100%;
+      width: 0%;
+      background-color: #4caf50;
+      text-align: center;
+      color: white;
+      line-height: 24px;
+      transition: width 0.5s ease;
+    }
+
+    #output {
+      white-space: pre-wrap;
+      background: #f5f5f5;
+      padding: 10px;
+      margin-top: 15px;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      height: 600px;
+      max-height: 700px; 
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>📤 Image Processor Interface</h2>
+
+  <button onclick="createSession()">1. Create Session</button>
+  <button onclick="connectToStream()" id="streamBtn" disabled>2. Connect to Stream</button>
+
+  <br><br>
+
+  <input type="file" id="fileInput" accept="image/*">
+  <button onclick="uploadImage()" id="uploadBtn" disabled>3. Upload Image</button>
+
+  <h3>Log Output</h3>
+  <div id="output"></div>
+
+  <script>
+    let sessionId = null;
+    let eventSource = null;
+
+    async function createSession() {
+      const res = await fetch('http://localhost:8000/create-session/');
+      const data = await res.json();
+      sessionId = data.session_id;
+      document.getElementById('streamBtn').disabled = false;
+      document.getElementById('uploadBtn').disabled = false;
+      log(`✅ Session created: ${sessionId}`);
+    }
+
+    function connectToStream() {
+      if (!sessionId) return alert('Create a session first');
+      const url = `http://localhost:8000/stream-events/?session_id=${sessionId}`;
+      eventSource = new EventSource(url);
+
+      eventSource.onmessage = function(event) {
+        log(`ℹ️ message: ${event.data}`);
+      };
+
+      eventSource.addEventListener("progress_update", function(event) {
+        const data = JSON.parse(event.data);
+        updateProgress(data.progress);
+        log(`🔄 ${data.status}: ${data.step}`);
+      });
+
+      eventSource.addEventListener("processing_complete", function(event) {
+        const data = JSON.parse(event.data);
+        updateProgress(100);
+        log(`✅ Done: ${data.result}`);
+        eventSource.close();
+      });
+
+      eventSource.addEventListener("processing_error", function(event) {
+        const data = JSON.parse(event.data);
+        log(`❌ Error: ${data.error}`);
+        eventSource.close();
+      });
+
+      log('🔌 Connected to stream');
+    }
+
+    async function uploadImage() {
+      if (!sessionId) return alert('Create a session first');
+
+      const fileInput = document.getElementById('fileInput');
+      if (!fileInput.files.length) return alert('Select an image first');
+
+      const formData = new FormData();
+      formData.append('image', fileInput.files[0]);
+
+      const res = await fetch(`http://localhost:8000/upload-image/?session_id=${sessionId}`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await res.json();
+      log(`📤 Upload: ${JSON.stringify(result)}`);
+    }
+
+    function updateProgress(percent) {
+      const fill = document.getElementById('progressBarFill');
+      fill.style.width = percent + '%';
+      fill.textContent = percent + '%';
+    }
+
+    function log(message) {
+      const output = document.getElementById('output');
+      output.textContent += message + '\n';
+      output.scrollTop = output.scrollHeight;
+    }
+  </script>
+</body>
+</html>
